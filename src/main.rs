@@ -41,19 +41,17 @@ fn int2d_par(dx: f64, dy: f64, data: &[&[f64]]) -> f64 {
         }).sum()
 }
 
-#[allow(unused_variables)]
 #[allow(non_snake_case)]
-fn int2d<D, I>(dx: f64, dy: f64, data: D) -> f64
+fn int2d<D, I>(dx: f64, dy: f64, mut data: D) -> impl Iterator<Item=f64>
     where
         D: Iterator<Item=I>,
         I: Iterator<Item=f64> + Clone,
 {
-    use std::iter::{Map, Enumerate};
-    // type I2 = Map<Enumerate<I>, impl FnMut((usize, f64)) -> u16>;
-    // let first_row = data.next().unwrap();
-    let mut data = data.map(|it: I| it.enumerate().map(|(i, _)| f64::from(i as u16)));
     let init = (data.next().unwrap(), data.next().unwrap(), 0.0);
-    let clos = |(mut r1, mut r2, acc): (Map<Enumerate<I>, _>, Map<Enumerate<I>, _>, f64), mut r3: Map<Enumerate<I>, _>| {
+    let clos =
+        move |(ref mut r1, ref mut r2, ref mut acc): &mut (I, I, f64), mut r3: I|
+    {
+        // let (ref mut r1, ref mut r2, _) = st;
         let r2_later = r2.clone();
         let r3_later = r3.clone();
         let init1 = (r1.next().unwrap(), r1.next().unwrap());
@@ -69,18 +67,15 @@ fn int2d<D, I>(dx: f64, dy: f64, data: D) -> f64
             .zip(r3.scan(init3, func))
             .map(|((cols1, cols2), cols3)| (cols1, cols2, cols3))
             .map(|(
-                (f00, f01, f02),
+                (_f00, f01, _f02),
                 (f10, f11, f12),
-                (f20, f21, f22)
+                (_f20, f21, f22)
             )| {
-                println!("{:.2} {:.2} {:.2}", f00, f01, f02);
-                println!("{:.2} {:.2} {:.2}", f10, f11, f12);
-                println!("{:.2} {:.2} {:.2}\n", f20, f21, f22);
                 let Dx_1 = (f11 - f10) / dx;
                 let Dx_2 = (f12 - f11) / dx;
                 let Dy_1 = (f11 - f01) / dy;
                 let Dy_2 = (f21 - f11) / dy;
-                // todo: mean
+                // todo: mean ?
                 let DyDx = (f22 - f21 - f12 + f11) / dx / dy;
                 let DxDy = DyDx;
                 (
@@ -98,16 +93,75 @@ fn int2d<D, I>(dx: f64, dy: f64, data: D) -> f64
                 ) * dx * dy
             })
             .sum::<f64>();
-        (r2_later, r3_later, acc + res)
+        *r1 = r2_later;
+        *r2 = r3_later;
+        *acc += res;
+        // *st = (r2_later, r3_later, st.2 + res);
+        Some(*acc)
     };
-    data.fold(init, clos).2
+    data.scan(init, clos)
 }
 
-fn main() {
+use std::{
+    fs::File,
+    io::{BufRead, BufReader},
+    str::FromStr,
+    marker::PhantomData
+};
+
+struct FileIter<R, T>
+    where
+        R: BufRead,
+        T: FromStr,
+        <T as FromStr>::Err: std::fmt::Debug
+{
+    stream: R,
+    buffer: String,
+    _phantom: PhantomData<T>
+}
+
+impl<R, T> FileIter<R, T>
+    where
+        R: BufRead,
+        T: FromStr,
+        <T as FromStr>::Err: std::fmt::Debug
+{
+    fn new(stream: R) -> Self {
+        FileIter {
+            stream,
+            buffer: String::new(),
+            _phantom: PhantomData::<T>
+        }
+    }
+}
+
+impl<R, T> Iterator for FileIter<R, T>
+    where
+        R: BufRead,
+        T: FromStr,
+        <T as FromStr>::Err: std::fmt::Debug
+{
+    type Item = Vec<T>;
+
+    fn next(&mut self) -> Option<Vec<T>> {
+        if self.stream.read_line(&mut self.buffer).unwrap() == 0 {
+            return None;
+        }
+        Some(
+            self.buffer
+                .split_whitespace()
+                .map(|s| T::from_str(s).unwrap())
+                .collect()
+        )
+    }
+}
+
+#[allow(dead_code)]
+fn test() {
     let (x1, x2) = (0., 1.);
     let (y1, y2) = (0., 1.);
-    let nx = 10;
-    let ny = 10;
+    let nx = 100;
+    let ny = 100;
     let dx = (x2 - x1) / f64::from(nx);
     let dy = (y2 - y1) / f64::from(ny);
     let data: Vec<Vec<f64>> =
@@ -115,24 +169,29 @@ fn main() {
             let y = y1 + dy * f64::from(yi);
             (-1..=nx).map(|xi| {
                 let x = x1 + dx * f64::from(xi);
-                x*y
+                x*x*y + y*y*y*x + x
             }).collect()
         }).collect();
-    println!("data = [");
-    data.iter().for_each(|v| {
-        print!("\t[");
-        v.into_iter().for_each(|e| print!("\t{:.2}", e));
-        println!("]");
-        // println!("  {:?}", v)
-    });
-    println!("]");
-    let expected = 0.25;
-    let actual = int2d(
+    let expected = 19.0 / 24.0;
+    let middle: Vec<f64> = int2d(
         dx, dy,
         data.iter().map(|v| v.iter().copied())
-    );
+    ).collect();
+    let actual = middle[middle.len() - 1];
+    println!("({}) {:?}", middle.len(), middle);
     println!(
         "expected = {}, actual = {}, error = {}",
         expected, actual, (expected - actual).abs() / expected
     );
+}
+
+// посчитать для h := 13 км и 9 км
+// максимум -- 1e7
+// rho := 1e-3
+fn main() {
+    let fit: FileIter<_, f64> = FileIter::new(
+        BufReader::new(File::open("ya_concat_NFL").unwrap())
+    );
+    let solutions = int2d(1.0, 1.0, fit.map(|v| v.into_iter().skip(1)));
+    solutions.for_each(|f| println!("{}", f));
 }
