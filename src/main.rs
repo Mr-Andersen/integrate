@@ -86,7 +86,6 @@ use std::{
     iter::once
 };
 
-// максимум -- 1e7
 fn main() -> Result<(), &'static str> {
     let args: Vec<_> = args().skip(1).collect();
     if args.get(0).map(|s| -> &str { &*s }) == Some("-h") {
