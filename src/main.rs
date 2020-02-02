@@ -1,4 +1,7 @@
-use rayon::prelude::*;
+use rayon::{
+    prelude::*,
+    iter::IndexedParallelIterator
+};
 
 // type Mat3x3 = ((f64, f64, f64), (f64, f64, f64), (f64, f64, f64));
 
@@ -42,15 +45,15 @@ fn int2d_par(dx: f64, dy: f64, data: &[&[f64]]) -> f64 {
 }
 
 #[allow(non_snake_case)]
-fn int2d_seq<'a>(dx: f64, dy: f64, data: &'a [&[f64]]) -> impl Iterator<Item=f64> + 'a {
-    data.windows(3)
+fn int2d_line<'a>(dx: f64, dy: f64, data: &'a [&[f64]]) -> impl IndexedParallelIterator<Item=f64> + 'a {
+    data.par_windows(3)
         .map(move |rows| {
-            rows[0].windows(3).map(|vals| (vals[0], vals[1], vals[2]))
+            rows[0].par_windows(3).map(|vals| (vals[0], vals[1], vals[2]))
                 .zip(
-                    rows[1].windows(3).map(|vals| (vals[0], vals[1], vals[2]))
+                    rows[1].par_windows(3).map(|vals| (vals[0], vals[1], vals[2]))
                 )
                 .zip(
-                    rows[2].windows(3).map(|vals| (vals[0], vals[1], vals[2])),
+                    rows[2].par_windows(3).map(|vals| (vals[0], vals[1], vals[2])),
                 )
                 .map(|((a, b), c)| (a, b, c))
                 .map(|((_f00, f01, _f02), (f10, f11, f12), (_f20, f21, f22))| {
@@ -119,16 +122,16 @@ fn main() -> Result<(), &'static str> {
             .collect::<Vec<_>>();
     match args.get(0).map(|s| -> &str { &*s }) {
         Some(arg @ "line") | Some(arg @ "seq") => {
-            let solution
-                = int2d_seq(
+            let solution: Vec<f64>
+                = int2d_line(
                     1.0, 1.0,
                     data_ref
-                );
+                ).collect();
             match arg {
-                "line" => solution.for_each(|s| println!("{:e}", s)),
+                "line" => solution.into_iter().for_each(|s| println!("{:e}", s)),
                 "seq" => {
                     let mut acc = 0.0;
-                    solution.for_each(|s| {
+                    solution.into_iter().for_each(|s| {
                         acc += s;
                         println!("{:e}", acc);
                     })
