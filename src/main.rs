@@ -82,35 +82,44 @@ fn int2d_seq<'a>(dx: f64, dy: f64, data: &'a [&[f64]]) -> impl Iterator<Item=f64
 use std::{
     env::args,
     fs::File,
-    io::{BufReader, BufRead}
+    io::{BufReader, BufRead},
+    iter::once
 };
 
 // максимум -- 1e7
 fn main() -> Result<(), &'static str> {
     let args: Vec<_> = args().skip(1).collect();
-    match args.get(0).map(|s| -> &str { &*s }) {
-        Some("-h") => {
-            println!("Usage:");
-            println!("  -h              => print this help");
-            println!("  line <filename> => integrate each line yielding result");
-            println!("  seq <filename>  => integrate yielding value on each step");
-            println!("  uno <filename>  => integrate in parallel yielding only result");
-        },
-        Some(arg @ "line") | Some(arg @ "seq") => {
-            let filename = args.get(1).expect("second argument must be <filename>");
-            let data = BufReader::with_capacity(
-                    1024 * 1024,
-                    File::open(filename).unwrap()
-                )
-                .lines()
-                .map(|s| {
-                    s.unwrap()
-                        .split_whitespace()
-                        .map(|s| s.parse::<f64>().unwrap())
-                        .collect::<Vec<_>>()
-                })
+    if args.get(0).map(|s| -> &str { &*s }) == Some("-h") {
+        println!("Usage:");
+        println!("  -h              => print this help");
+        println!("  line <filename> => integrate each line yielding result");
+        println!("  seq <filename>  => integrate yielding value on each step");
+        println!("  uno <filename>  => integrate in parallel yielding only result");
+        return Ok(());
+    }
+    let filename = args.get(1).expect("second argument must be <filename>");
+    let data = BufReader::with_capacity(
+            1024 * 1024,
+            File::open(filename).unwrap()
+        )
+        .lines()
+        .map(|s| {
+            let mut res = s.unwrap()
+                .split_whitespace()
+                .map(|s| s.parse::<f64>().unwrap())
                 .collect::<Vec<_>>();
-            let data_ref = &data.iter().map(|v| -> &[f64] { &*v }).collect::<Vec<_>>();
+            // skip "z" in the first column with value in the second
+            res[0] = res[1];
+            res
+        })
+        .collect::<Vec<_>>();
+    let data: Vec<_> = once(data[0].clone()).chain(data.into_iter()).collect();
+    let data_ref =
+        &data.iter()
+            .map(|v| -> &[f64] { &*v })
+            .collect::<Vec<_>>();
+    match args.get(0).map(|s| -> &str { &*s }) {
+        Some(arg @ "line") | Some(arg @ "seq") => {
             let solution
                 = int2d_seq(
                     1.0, 1.0,
@@ -129,26 +138,10 @@ fn main() -> Result<(), &'static str> {
             }
         },
         Some("uno") => {
-            let filename = args.get(1).expect("second argument must be <filename>");
-            let data: Vec<Vec<f64>>
-                = BufReader::with_capacity(
-                    1024 * 1024,
-                    File::open(filename).unwrap()
-                )
-                .lines()
-                .map(|s| {
-                    s.unwrap()
-                        .split_whitespace()
-                        .map(|s| s.parse::<f64>().unwrap())
-                        .collect()
-                })
-                .collect();
             let solution
                 = int2d_par(
                     1.0, 1.0,
-                    &data.iter()
-                        .map(|v| -> &[f64] { &*v })
-                        .collect::<Vec<_>>()
+                    data_ref
                 );
             println!("{:e}", solution);
         },
