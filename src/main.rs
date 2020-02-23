@@ -134,7 +134,7 @@ fn main() -> Result<(), &'static str> {
             .map(f64::from_str);
         dx = deltas.next().expect("dx").expect("parse dx into f64");
         dy = deltas.next().expect("dy").expect("parse dy into f64");
-        filename = args.get(2).expect("third argument must be <filename>");
+        filename = args.get(3).expect("fourth argument must be <filename>");
     } else {
         filename = args.get(1).expect("second argument must be <filename> of '-D'");
     }
